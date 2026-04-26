@@ -1,0 +1,225 @@
+# AQ.py
+
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import pandas as pd
+
+# =====================================================
+# STEP 1: TRAIN AI MODEL USING TRAINING DATASET
+# =====================================================
+
+# Load training dataset
+train_data = pd.read_csv("data_set.csv")
+
+# Features and Label
+X = train_data.drop("Label", axis=1)
+y = train_data["Label"]
+
+# Split dataset
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.2,
+    random_state=42
+)
+
+# Train Decision Tree Model
+model = DecisionTreeClassifier()
+model.fit(X_train, y_train)
+
+# Model Accuracy
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+# Label Mapping
+labels = {
+    0: "Safe",
+    1: "Poor Ventilation",
+    2: "Gas Leakage Risk",
+    3: "High Humidity Risk"
+}
+
+# =====================================================
+# STEP 2: READ LAST 15 MINUTES SENSOR DATA
+# =====================================================
+
+# Last 15 mins real-time data
+recent_data = pd.read_csv("last_15_min_data.csv")
+
+# =====================================================
+# STEP 3: CALCULATE AVERAGE VALUES
+# =====================================================
+
+avg_temperature = recent_data["Temperature"].mean()
+avg_humidity = recent_data["Humidity"].mean()
+avg_gas = recent_data["Gas_Level"].mean()
+avg_aqi = recent_data["AQI"].mean()
+avg_smoke = recent_data["Smoke_Level"].mean()
+
+occupancy = int(recent_data["Occupancy"].mode()[0])
+window_status = int(recent_data["Window_Status"].mode()[0])
+room_type = int(recent_data["Room_Type"].mode()[0])
+time_of_day = int(recent_data["Time_of_Day"].mode()[0])
+
+# =====================================================
+# STEP 4: TREND ANALYSIS
+# =====================================================
+
+# Gas Trend
+first_gas = recent_data["Gas_Level"].iloc[0]
+last_gas = recent_data["Gas_Level"].iloc[-1]
+
+if last_gas > first_gas:
+    gas_trend = "Increasing"
+elif last_gas < first_gas:
+    gas_trend = "Decreasing"
+else:
+    gas_trend = "Stable"
+
+# Humidity Trend
+first_humidity = recent_data["Humidity"].iloc[0]
+last_humidity = recent_data["Humidity"].iloc[-1]
+
+if last_humidity > first_humidity:
+    humidity_trend = "Increasing"
+elif last_humidity < first_humidity:
+    humidity_trend = "Decreasing"
+else:
+    humidity_trend = "Stable"
+
+# =====================================================
+# STEP 5: AI PREDICTION USING SAME MODEL
+# =====================================================
+
+prediction_input = pd.DataFrame([{
+    "Temperature": avg_temperature,
+    "Humidity": avg_humidity,
+    "Gas_Level": avg_gas,
+    "AQI": avg_aqi,
+    "Smoke_Level": avg_smoke,
+    "Occupancy": occupancy,
+    "Window_Status": window_status,
+    "Room_Type": room_type,
+    "Time_of_Day": time_of_day
+}])
+
+prediction = model.predict(prediction_input)
+current_prediction = labels[prediction[0]]
+
+# =====================================================
+# STEP 6: ROOT CAUSE ANALYSIS
+# =====================================================
+
+if avg_humidity > 80:
+    root_cause = "High humidity causing unhealthy indoor conditions and mold risk"
+
+elif avg_gas > 350 and avg_smoke < 20:
+    root_cause = "Gas concentration rising continuously indicates possible gas leakage"
+
+elif avg_smoke > 50:
+    root_cause = "Smoke pollution detected due to indoor activity"
+
+elif avg_gas > 250 and occupancy == 1 and window_status == 0:
+    root_cause = "Poor ventilation due to closed room and rising gas concentration"
+
+else:
+    root_cause = "Normal indoor environmental condition"
+
+# =====================================================
+# STEP 7: FUTURE PREDICTION
+# =====================================================
+
+if gas_trend == "Increasing" and avg_gas > 300:
+    future_prediction = "Possible Gas Leakage Risk may occur soon"
+
+elif humidity_trend == "Increasing" and avg_humidity > 80:
+    future_prediction = "Future mold growth and unhealthy air quality likely"
+
+elif avg_gas > 250:
+    future_prediction = "Indoor air quality may become unhealthy in next few minutes"
+
+else:
+    future_prediction = "Environment likely to remain safe"
+
+# =====================================================
+# STEP 8: RISK LEVEL
+# =====================================================
+
+if current_prediction in ["Gas Leakage Risk", "High Humidity Risk"]:
+    risk_level = "HIGH"
+
+elif current_prediction == "Poor Ventilation":
+    risk_level = "MODERATE"
+
+else:
+    risk_level = "LOW"
+
+# =====================================================
+# STEP 9: SUGGESTED ACTION
+# =====================================================
+
+if risk_level == "HIGH":
+    suggested_action = "Improve ventilation immediately and inspect room conditions"
+
+elif risk_level == "MODERATE":
+    suggested_action = "Open windows and monitor air quality continuously"
+
+else:
+    suggested_action = "No immediate action required"
+
+# =====================================================
+# STEP 10: FINAL SMART REPORT
+# =====================================================
+
+print("\n======================================================")
+print("      SMART AIR QUALITY ANALYSIS REPORT")
+print("======================================================\n")
+
+print("MODEL PERFORMANCE")
+print(f"Model Accuracy              : {round(accuracy * 100, 2)} %")
+
+print("\nLAST 15 MINUTES ANALYSIS")
+
+print(f"Average Temperature         : {avg_temperature:.2f} °C")
+print(f"Average Humidity            : {avg_humidity:.2f} %")
+print(f"Average Gas Level           : {avg_gas:.2f}")
+print(f"Average AQI                 : {avg_aqi:.2f}")
+print(f"Average Smoke Level         : {avg_smoke:.2f}")
+
+print("\nTREND ANALYSIS")
+
+print(f"Gas Trend                   : {gas_trend}")
+print(f"Humidity Trend              : {humidity_trend}")
+
+print("\nAI FINAL REPORT")
+
+print(f"Current Prediction          : {current_prediction}")
+print(f"Root Cause Analysis         : {root_cause}")
+print(f"Future Prediction           : {future_prediction}")
+print(f"Risk Level                  : {risk_level}")
+print(f"Suggested Action            : {suggested_action}")
+
+print("\n======================================================\n")
+
+# =========================================
+# STEP 11 : APPEND LAST 15 MIN DATA TO MAIN DATASET
+# =========================================
+
+# Predict label for all recent rows
+recent_features = recent_data.copy()
+
+predicted_labels = model.predict(recent_features)
+
+# Add predicted labels to recent data
+recent_data["Label"] = predicted_labels
+
+# Append full file to main dataset
+recent_data.to_csv(
+    "data_set.csv",
+    mode="a",
+    header=False,
+    index=False
+)
+
+print("\nLast 15-minute data successfully added to main dataset for future retraining.")
