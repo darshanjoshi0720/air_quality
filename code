@@ -1,0 +1,271 @@
+# =====================================================
+# 🔥 IMPORTS
+# =====================================================
+
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import pandas as pd
+
+# Firebase
+import firebase_admin
+from firebase_admin import credentials, db
+
+
+# =====================================================
+# 🔐 STEP 0: INITIALIZE FIREBASE
+# =====================================================
+
+cred = credentials.Certificate(
+    "smarthomeaq-55ca3-firebase-adminsdk-fbsvc-606955612c.json"
+)
+
+firebase_admin.initialize_app(cred, {
+    'databaseURL': 'https://smarthomeaq-55ca3-default-rtdb.firebaseio.com/'
+})
+
+
+# =====================================================
+# STEP 1: TRAIN AI MODEL
+# =====================================================
+
+train_data = pd.read_csv("data_set.csv")
+
+X = train_data.drop("Label", axis=1)
+y = train_data["Label"]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+model = DecisionTreeClassifier()
+model.fit(X_train, y_train)
+
+accuracy = accuracy_score(y_test, model.predict(X_test))
+
+labels = {
+    0: "Safe",
+    1: "Poor Ventilation",
+    2: "Gas Leakage Risk",
+    3: "High Humidity Risk",
+    4: "Fire Risk",
+    5: "Nighttime Hazard",
+    6: "Occupant Exposure Risk",
+    7: "Combined Environmental Stress"
+}
+
+
+# =====================================================
+# STEP 2: FETCH FIREBASE DATA
+# =====================================================
+
+ref = db.reference("/")
+data = ref.get()
+
+if data is None:
+    raise ValueError("No data found in Firebase!")
+
+recent_data = pd.DataFrame.from_dict(data, orient="index")
+recent_data.reset_index(drop=True, inplace=True)
+
+# Last 50 entries
+recent_data = recent_data.tail(50)
+
+print("\n🔥 FIREBASE DATA:\n")
+print(recent_data.head())
+
+
+# =====================================================
+# STEP 3: CLEAN DATA
+# =====================================================
+
+columns = [
+    "Temperature", "Humidity", "Gas_Level", "AQI",
+    "Smoke_Level", "Occupancy", "Window_Status",
+    "Room_Type", "Time_of_Day"
+]
+
+recent_data = recent_data[columns]
+recent_data = recent_data.dropna()
+recent_data[columns] = recent_data[columns].apply(pd.to_numeric)
+
+
+# =====================================================
+# STEP 4: AVERAGES
+# =====================================================
+
+avg_temperature = recent_data["Temperature"].mean()
+avg_humidity = recent_data["Humidity"].mean()
+avg_gas = recent_data["Gas_Level"].mean()
+avg_aqi = recent_data["AQI"].mean()
+avg_smoke = recent_data["Smoke_Level"].mean()
+
+occupancy = int(recent_data["Occupancy"].mode()[0])
+window_status = int(recent_data["Window_Status"].mode()[0])
+room_type = int(recent_data["Room_Type"].mode()[0])
+time_of_day = int(recent_data["Time_of_Day"].mode()[0])
+
+
+# =====================================================
+# STEP 5: TREND FUNCTION
+# =====================================================
+
+def get_trend(series):
+    return "Increasing" if series.iloc[-1] > series.iloc[0] else \
+           "Decreasing" if series.iloc[-1] < series.iloc[0] else "Stable"
+
+
+temperature_trend = get_trend(recent_data["Temperature"])
+humidity_trend = get_trend(recent_data["Humidity"])
+gas_trend = get_trend(recent_data["Gas_Level"])
+smoke_trend = get_trend(recent_data["Smoke_Level"])
+aqi_trend = get_trend(recent_data["AQI"])
+
+
+# =====================================================
+# STEP 6: AI PREDICTION
+# =====================================================
+
+prediction_input = pd.DataFrame([{
+    "Temperature": avg_temperature,
+    "Humidity": avg_humidity,
+    "Gas_Level": avg_gas,
+    "AQI": avg_aqi,
+    "Smoke_Level": avg_smoke,
+    "Occupancy": occupancy,
+    "Window_Status": window_status,
+    "Room_Type": room_type,
+    "Time_of_Day": time_of_day
+}])
+
+prediction = model.predict(prediction_input)
+current_prediction = labels[prediction[0]]
+
+
+# =====================================================
+# STEP 7: RULE-BASED OVERRIDE (IMPORTANT 🔥)
+# =====================================================
+
+if avg_smoke > 70 and avg_temperature > 35:
+    current_prediction = "Fire Risk"
+
+elif time_of_day == 3 and occupancy == 1:
+    current_prediction = "Nighttime Hazard"
+
+elif occupancy == 1 and avg_gas > 250 and window_status == 0:
+    current_prediction = "Occupant Exposure Risk"
+
+elif avg_temperature > 32 and avg_humidity > 80 and avg_gas > 250:
+    current_prediction = "Combined Environmental Stress"
+
+elif avg_humidity > 80:
+    current_prediction = "High Humidity Risk"
+
+
+# =====================================================
+# STEP 8: ROOT CAUSE
+# =====================================================
+
+if avg_humidity > 80:
+    root_cause = "High humidity causing mold risk"
+
+elif avg_gas > 350:
+    root_cause = "High gas concentration detected"
+
+elif avg_smoke > 50:
+    root_cause = "Smoke pollution detected"
+
+else:
+    root_cause = "Normal indoor conditions"
+
+
+# =====================================================
+# STEP 9: FUTURE PREDICTION
+# =====================================================
+
+if gas_trend == "Increasing":
+    future_prediction = "Gas levels rising — risk may increase"
+
+elif humidity_trend == "Increasing":
+    future_prediction = "Humidity increasing — discomfort likely"
+
+else:
+    future_prediction = "Conditions stable"
+
+
+# =====================================================
+# STEP 10: RISK LEVEL
+# =====================================================
+
+if current_prediction in [
+    "Gas Leakage Risk",
+    "Fire Risk",
+    "Occupant Exposure Risk"
+]:
+    risk_level = "HIGH"
+
+elif current_prediction in [
+    "Poor Ventilation",
+    "High Humidity Risk"
+]:
+    risk_level = "MODERATE"
+
+else:
+    risk_level = "LOW"
+
+
+# =====================================================
+# STEP 11: ACTION
+# =====================================================
+
+if risk_level == "HIGH":
+    action = "Immediate action required: ventilate and inspect"
+
+elif risk_level == "MODERATE":
+    action = "Improve ventilation"
+
+else:
+    action = "No action needed"
+
+
+# =====================================================
+# STEP 12: FINAL REPORT
+# =====================================================
+
+print("\n================ SMART REPORT ================\n")
+
+print(f"Accuracy: {round(accuracy*100,2)} %")
+
+print("\nAVERAGES:")
+print(f"Temp: {avg_temperature:.2f}")
+print(f"Humidity: {avg_humidity:.2f}")
+print(f"Gas: {avg_gas:.2f}")
+print(f"Smoke: {avg_smoke:.2f}")
+
+print("\nTRENDS:")
+print(f"Temperature: {temperature_trend}")
+print(f"Humidity: {humidity_trend}")
+print(f"Gas: {gas_trend}")
+print(f"Smoke: {smoke_trend}")
+print(f"AQI: {aqi_trend}")
+
+print("\nAI RESULT:")
+print(f"Prediction: {current_prediction}")
+print(f"Root Cause: {root_cause}")
+print(f"Future: {future_prediction}")
+print(f"Risk: {risk_level}")
+print(f"Action: {action}")
+
+print("\n=============================================\n")
+
+
+# =====================================================
+# STEP 13: APPEND DATA
+# =====================================================
+
+recent_features = recent_data.copy()
+recent_data["Label"] = model.predict(recent_features)
+
+recent_data.to_csv("data_set.csv", mode="a", header=False, index=False)
+
+print("✅ Data appended successfully")
